@@ -1,0 +1,1053 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MeteoRadar Pro & Cultural Hub</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Leaflet CSS & JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
+        body { font-family: 'Plus Jakarta Sans', sans-serif; }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+        }
+        .dark-glass {
+            background: rgba(15, 23, 42, 0.9);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        #radarMap { height: 400px; width: 100%; border-radius: 1rem; z-index: 10; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(156, 163, 175, 0.5); border-radius: 4px; }
+        .badge-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen pb-12 selection:bg-blue-500 selection:text-white">
+
+    <!-- Header Navigation -->
+    <header class="sticky top-0 z-40 dark-glass border-b border-slate-800/80 mb-6 px-4 py-3">
+        <div class="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div class="flex items-center gap-3">
+                <div class="bg-gradient-to-tr from-blue-600 to-cyan-400 p-2.5 rounded-xl shadow-lg shadow-blue-500/20">
+                    <i class="fa-solid font-bold text-xl fa-cloud-bolt text-white"></i>
+                </div>
+                <div>
+                    <h1 class="text-xl font-extrabold bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">MeteoRadar Pro</h1>
+                    <p class="text-xs text-slate-400 font-medium">Clima, Radar, Ropa, Actividades e Historia Local</p>
+                </div>
+            </div>
+
+            <!-- Search Form -->
+            <form id="searchForm" class="flex items-center gap-2 w-full sm:w-auto">
+                <div class="relative w-full sm:w-80">
+                    <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+                    <input type="text" id="searchInput" placeholder="Dirección o Código Postal (ej. 06001)" 
+                        class="w-full pl-10 pr-4 py-2 bg-slate-800/90 text-sm rounded-xl border border-slate-700/60 focus:outline-none focus:border-blue-500 text-white placeholder-slate-400 shadow-inner">
+                </div>
+                <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 active:scale-95 text-white text-sm font-semibold rounded-xl transition shadow-md shadow-blue-600/30 flex items-center gap-2 whitespace-nowrap">
+                    Buscar
+                </button>
+                <button type="button" id="locBtn" title="Usar mi ubicación actual" class="p-2 bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-300 rounded-xl border border-slate-700 transition">
+                    <i class="fa-solid fa-location-crosshairs text-base"></i>
+                </button>
+            </form>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 space-y-6">
+
+        <!-- Status & Error Alert -->
+        <div id="alertBox" class="hidden p-4 bg-red-500/20 border border-red-500/40 rounded-xl text-red-200 text-sm flex items-center gap-3">
+            <i class="fa-solid fa-circle-exclamation text-lg"></i>
+            <span id="alertText">No se ha encontrado la ubicación especificada.</span>
+        </div>
+
+        <!-- Top Weather Overview Card -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            <!-- Current Weather & Location -->
+            <div class="lg:col-span-1 bg-gradient-to-br from-slate-800/90 to-slate-900/90 p-6 rounded-2xl border border-slate-700/50 shadow-xl flex flex-col justify-between relative overflow-hidden">
+                <div class="absolute -right-8 -top-8 w-40 h-40 bg-blue-500/10 rounded-full blur-3xl pointer-events-none"></div>
+                
+                <div>
+                    <div class="flex justify-between items-start mb-4">
+                        <div>
+                            <h2 id="cityName" class="text-2xl font-bold text-white tracking-tight">Cargando...</h2>
+                            <p id="cityCoords" class="text-xs text-slate-400 font-mono mt-0.5">Lat: -- | Lon: --</p>
+                        </div>
+                        <span id="weatherBadge" class="px-3 py-1 bg-blue-500/20 text-blue-300 text-xs font-semibold rounded-full border border-blue-500/30">
+                            En vivo
+                        </span>
+                    </div>
+
+                    <div class="flex items-center gap-6 my-4">
+                        <div id="weatherIconContainer" class="text-5xl text-blue-400">
+                            <i class="fa-solid fa-cloud-sun-rain"></i>
+                        </div>
+                        <div>
+                            <div class="flex items-baseline">
+                                <span id="currentTemp" class="text-5xl font-extrabold text-white">--</span>
+                                <span class="text-2xl font-bold text-slate-400 ml-1">°C</span>
+                            </div>
+                            <p id="weatherDesc" class="text-sm font-medium text-slate-300 capitalize">Obteniendo datos...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Secondary Metrics -->
+                <div class="grid grid-cols-3 gap-2 pt-4 border-t border-slate-700/60 text-center">
+                    <div class="bg-slate-800/60 p-2.5 rounded-xl border border-slate-700/40">
+                        <p class="text-[11px] text-slate-400 font-medium">Sensación</p>
+                        <p id="feelsLike" class="text-sm font-bold text-slate-200 mt-0.5">-- °C</p>
+                    </div>
+                    <div class="bg-slate-800/60 p-2.5 rounded-xl border border-slate-700/40">
+                        <p class="text-[11px] text-slate-400 font-medium">Viento</p>
+                        <p id="windSpeed" class="text-sm font-bold text-slate-200 mt-0.5">-- km/h</p>
+                    </div>
+                    <div class="bg-slate-800/60 p-2.5 rounded-xl border border-slate-700/40">
+                        <p class="text-[11px] text-slate-400 font-medium">Humedad</p>
+                        <p id="humidity" class="text-sm font-bold text-slate-200 mt-0.5">-- %</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Outfits & General Advice -->
+            <div class="lg:col-span-2 bg-gradient-to-br from-slate-800/90 to-slate-900/90 p-6 rounded-2xl border border-slate-700/50 shadow-xl flex flex-col justify-between">
+                <div>
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                            <i class="fa-solid fa-shirt text-blue-400"></i> Recomendación de Vestuario Inteligente
+                        </h3>
+                        <span class="text-xs text-slate-400">Basado en la previsión actual</span>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                        <div class="bg-slate-800/80 p-4 rounded-xl border border-slate-700/60">
+                            <div class="flex items-center gap-2 text-cyan-400 text-xs font-semibold uppercase mb-1">
+                                <i class="fa-solid fa-layer-group"></i> Capa Exterior
+                            </div>
+                            <p id="outerwearAdvice" class="text-sm font-medium text-slate-200">Analizando meteorología...</p>
+                        </div>
+                        <div class="bg-slate-800/80 p-4 rounded-xl border border-slate-700/60">
+                            <div class="flex items-center gap-2 text-amber-400 text-xs font-semibold uppercase mb-1">
+                                <i class="fa-solid fa-vest"></i> Prenda Base / Tronco
+                            </div>
+                            <p id="baseAdvice" class="text-sm font-medium text-slate-200">Analizando meteorología...</p>
+                        </div>
+                        <div class="bg-slate-800/80 p-4 rounded-xl border border-slate-700/60">
+                            <div class="flex items-center gap-2 text-emerald-400 text-xs font-semibold uppercase mb-1">
+                                <i class="fa-solid fa-shoe-prints"></i> Calzado y Accesorios
+                            </div>
+                            <p id="footwearAdvice" class="text-sm font-medium text-slate-200">Analizando meteorología...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-blue-950/40 border border-blue-800/50 p-4 rounded-xl flex items-start gap-3">
+                    <i class="fa-solid fa-lightbulb text-blue-400 text-lg mt-0.5"></i>
+                    <div>
+                        <h4 class="text-xs font-bold text-blue-300 uppercase tracking-wider">Consejo Meteorológico</h4>
+                        <p id="generalTip" class="text-xs text-slate-300 mt-0.5 leading-relaxed">Cargando sugerencias...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Real-Time Precipitation Radar & Maps -->
+        <div class="bg-slate-800/90 p-6 rounded-2xl border border-slate-700/50 shadow-xl space-y-4">
+            <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div>
+                    <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                        <i class="fa-solid fa-satellite-dish text-emerald-400"></i> Radar Climatológico en Tiempo Real
+                    </h3>
+                    <p class="text-xs text-slate-400">Capa interactiva de precipitación actualizada cada 10 minutos (RainViewer)</p>
+                </div>
+                
+                <div class="flex items-center gap-2">
+                    <button id="playRadarBtn" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-lg transition flex items-center gap-1.5 shadow">
+                        <i class="fa-solid fa-play"></i> Reproducción Animada
+                    </button>
+                    <span id="radarTimestamp" class="text-xs font-mono bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-700 text-slate-300">
+                        Última toma: --:--
+                    </span>
+                </div>
+            </div>
+
+            <!-- Leaflet Container -->
+            <div id="radarMap" class="shadow-inner border border-slate-700/60"></div>
+        </div>
+
+        <!-- Hourly & 7-Day Forecast Tabs -->
+        <div class="bg-slate-800/90 p-6 rounded-2xl border border-slate-700/50 shadow-xl">
+            <h3 class="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                <i class="fa-solid fa-clock font-normal text-amber-400"></i> Previsión Detallada (Próximas horas y 7 días)
+            </h3>
+
+            <!-- Hourly Scrollable Bar -->
+            <div class="mb-6">
+                <h4 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Pronóstico Próximas 12 Horas</h4>
+                <div id="hourlyContainer" class="flex gap-3 overflow-x-auto pb-3 custom-scrollbar">
+                    <!-- Hourly Cards Inserted Dynamically -->
+                </div>
+            </div>
+
+            <!-- Daily Grid -->
+            <div>
+                <h4 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Previsión 7 Días</h4>
+                <div id="dailyContainer" class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+                    <!-- Daily Cards Inserted Dynamically -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Historical & Heritage Overview Section -->
+        <div class="bg-slate-800/90 p-6 rounded-2xl border border-slate-700/50 shadow-xl space-y-6">
+            <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-700/60 pb-4">
+                <div>
+                    <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                        <i class="fa-solid fa-landmark text-amber-400"></i> Historia, Monumentos y Acontecimientos Destacados
+                    </h3>
+                    <p class="text-xs text-slate-400">Conoce el patrimonio cultural y la memoria histórica de la zona consultada</p>
+                </div>
+                <span id="heritageCityTag" class="px-3 py-1 bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-semibold rounded-full">
+                    Patrimonio de la Zona
+                </span>
+            </div>
+
+            <!-- General City History -->
+            <div class="bg-slate-900/60 p-5 rounded-xl border border-slate-700/50">
+                <h4 class="text-sm font-bold text-amber-400 flex items-center gap-2 mb-2">
+                    <i class="fa-solid fa-book-open"></i> Reseña Histórica de la Localidad
+                </h4>
+                <p id="cityHistoryText" class="text-xs text-slate-300 leading-relaxed">
+                    Cargando información histórica...
+                </p>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <!-- Top Landmarks & Architecture -->
+                <div class="space-y-3">
+                    <h4 class="text-sm font-bold text-slate-200 flex items-center gap-2">
+                        <i class="fa-solid fa-monument text-blue-400"></i> Monumentos y Arquitectura Emblemática
+                    </h4>
+                    <div id="landmarksContainer" class="space-y-3">
+                        <!-- Landmarks dynamically injected -->
+                    </div>
+                </div>
+
+                <!-- Historical Events Timeline -->
+                <div class="space-y-3">
+                    <h4 class="text-sm font-bold text-slate-200 flex items-center gap-2">
+                        <i class="fa-solid fa-timeline text-emerald-400"></i> Acontecimientos e Hitos Históricos
+                    </h4>
+                    <div id="eventsContainer" class="space-y-3">
+                        <!-- Events dynamically injected -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Activities Section: Outdoor vs Indoor -->
+        <div class="bg-slate-800/90 p-6 rounded-2xl border border-slate-700/50 shadow-xl space-y-6">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-700/60 pb-4">
+                <div>
+                    <h3 class="text-lg font-bold text-white flex items-center gap-2">
+                        <i class="fa-solid fa-compass text-cyan-400"></i> Actividades y Rutas de Ocio Recomendadas
+                    </h3>
+                    <p class="text-xs text-slate-400">Planes adaptados a las condiciones climatológicas. Haz clic en una actividad para ver detalles, precios y mapa.</p>
+                </div>
+                
+                <!-- Filter Tabs -->
+                <div class="flex items-center gap-1 bg-slate-900/80 p-1 rounded-xl border border-slate-700">
+                    <button id="filterAll" class="activity-filter px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 text-white transition">
+                        Todas
+                    </button>
+                    <button id="filterOutdoor" class="activity-filter px-3 py-1.5 text-xs font-semibold rounded-lg text-slate-400 hover:text-white transition">
+                        <i class="fa-solid fa-tree mr-1"></i> Exterior
+                    </button>
+                    <button id="filterIndoor" class="activity-filter px-3 py-1.5 text-xs font-semibold rounded-lg text-slate-400 hover:text-white transition">
+                        <i class="fa-solid fa-building-columns mr-1"></i> Interior
+                    </button>
+                </div>
+            </div>
+
+            <!-- Activities Cards Grid -->
+            <div id="activitiesGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <!-- Injected dynamically -->
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Activity / Route Detailed Modal -->
+    <div id="activityModal" class="fixed inset-0 z-50 hidden bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto custom-scrollbar shadow-2xl relative p-6 text-slate-100">
+            
+            <!-- Close Button -->
+            <button id="closeModalBtn" class="absolute top-4 right-4 p-2 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-full transition">
+                <i class="fa-solid fa-xmark text-lg"></i>
+            </button>
+
+            <!-- Modal Content Header -->
+            <div class="flex items-center gap-3 mb-4">
+                <div id="modalCategoryIcon" class="p-3 bg-blue-500/20 text-blue-400 rounded-xl text-xl">
+                    <i class="fa-solid fa-map-location-dot"></i>
+                </div>
+                <div>
+                    <span id="modalTypeBadge" class="px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-slate-800 text-slate-300 rounded-md border border-slate-700">
+                        Categoría
+                    </span>
+                    <h3 id="modalTitle" class="text-xl font-extrabold text-white mt-1">Título de la Actividad</h3>
+                </div>
+            </div>
+
+            <p id="modalDescription" class="text-sm text-slate-300 leading-relaxed mb-6">
+                Descripción detallada de la actividad...
+            </p>
+
+            <!-- Activity Details Metadata Grid -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+                <div class="bg-slate-800/60 p-3.5 rounded-xl border border-slate-700/60">
+                    <span class="text-[11px] font-medium text-slate-400 uppercase tracking-wider block mb-1">
+                        <i class="fa-solid fa-location-dot text-red-400 mr-1"></i> Ubicación Concreta
+                    </span>
+                    <p id="modalLocation" class="text-xs font-bold text-slate-200">Ubicación del lugar</p>
+                </div>
+
+                <div class="bg-slate-800/60 p-3.5 rounded-xl border border-slate-700/60">
+                    <span class="text-[11px] font-medium text-slate-400 uppercase tracking-wider block mb-1">
+                        <i class="fa-solid fa-ticket text-emerald-400 mr-1"></i> Entrada / Precio
+                    </span>
+                    <p id="modalPrice" class="text-xs font-bold text-slate-200">Entrada gratuita o coste aproximado</p>
+                </div>
+
+                <div class="bg-slate-800/60 p-3.5 rounded-xl border border-slate-700/60">
+                    <span class="text-[11px] font-medium text-slate-400 uppercase tracking-wider block mb-1">
+                        <i class="fa-solid fa-clock text-amber-400 mr-1"></i> Horario / Duración
+                    </span>
+                    <p id="modalSchedule" class="text-xs font-bold text-slate-200">Duración o tiempo estimado</p>
+                </div>
+
+                <div class="bg-slate-800/60 p-3.5 rounded-xl border border-slate-700/60">
+                    <span class="text-[11px] font-medium text-slate-400 uppercase tracking-wider block mb-1">
+                        <i class="fa-solid fa-shield-halved text-cyan-400 mr-1"></i> Equipamiento / Requisitos
+                    </span>
+                    <p id="modalGear" class="text-xs font-bold text-slate-200">Prendas o equipo recomendado</p>
+                </div>
+            </div>
+
+            <!-- Route Specific Technical Specs (Outdoor Hikes / Cycling) -->
+            <div id="modalRouteSpecs" class="bg-gradient-to-r from-blue-950/40 to-slate-800/60 p-4 rounded-xl border border-blue-800/40 mb-6 hidden">
+                <h4 class="text-xs font-bold text-blue-300 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                    <i class="fa-solid fa-route"></i> Ficha Técnica de la Ruta Externa
+                </h4>
+                <div class="grid grid-cols-3 gap-2 text-center">
+                    <div>
+                        <span class="text-[10px] text-slate-400 block">Distancia</span>
+                        <span id="modalDistance" class="text-sm font-extrabold text-white">-- km</span>
+                    </div>
+                    <div>
+                        <span class="text-[10px] text-slate-400 block">Desnivel</span>
+                        <span id="modalElevation" class="text-sm font-extrabold text-white">-- m</span>
+                    </div>
+                    <div>
+                        <span class="text-[10px] text-slate-400 block">Dificultad</span>
+                        <span id="modalDifficulty" class="text-sm font-extrabold text-white">--</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Historical Connection Context -->
+            <div id="modalHistoryContext" class="bg-amber-950/30 p-4 rounded-xl border border-amber-800/40 mb-6">
+                <h4 class="text-xs font-bold text-amber-400 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                    <i class="fa-solid fa-landmark"></i> Contexto Histórico y Relevancia
+                </h4>
+                <p id="modalHistoryText" class="text-xs text-slate-300 leading-relaxed">
+                    Información sobre la relevancia cultural o histórica vinculada a este punto o itinerario.
+                </p>
+            </div>
+
+            <!-- CTA Action Links -->
+            <div class="flex flex-col sm:flex-row gap-3 pt-2">
+                <a id="modalMapLink" href="#" target="_blank" class="flex-1 py-2.5 px-4 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl text-center transition flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30">
+                    <i class="fa-solid fa-map-location-dot"></i> Ver Ruta / Ubicación en Google Maps
+                </a>
+                <a id="modalTicketLink" href="#" target="_blank" class="flex-1 py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl text-center transition flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/30">
+                    <i class="fa-solid fa-arrow-up-right-from-square"></i> Web Oficial / Comprar Entradas
+                </a>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Application Script -->
+    <script>
+        // Global Application State
+        const state = {
+            lat: 38.8794,
+            lon: -6.9707,
+            cityName: "Badajoz",
+            country: "España",
+            weatherData: null,
+            radarMap: null,
+            radarLayers: [],
+            radarTimestamps: [],
+            currentRadarIndex: 0,
+            radarInterval: null,
+            currentFilter: 'all',
+            activitiesList: []
+        };
+
+        // DOM Elements
+        const elements = {
+            searchForm: document.getElementById('searchForm'),
+            searchInput: document.getElementById('searchInput'),
+            locBtn: document.getElementById('locBtn'),
+            alertBox: document.getElementById('alertBox'),
+            alertText: document.getElementById('alertText'),
+            cityName: document.getElementById('cityName'),
+            cityCoords: document.getElementById('cityCoords'),
+            currentTemp: document.getElementById('currentTemp'),
+            weatherDesc: document.getElementById('weatherDesc'),
+            feelsLike: document.getElementById('feelsLike'),
+            windSpeed: document.getElementById('windSpeed'),
+            humidity: document.getElementById('humidity'),
+            outerwearAdvice: document.getElementById('outerwearAdvice'),
+            baseAdvice: document.getElementById('baseAdvice'),
+            footwearAdvice: document.getElementById('footwearAdvice'),
+            generalTip: document.getElementById('generalTip'),
+            hourlyContainer: document.getElementById('hourlyContainer'),
+            dailyContainer: document.getElementById('dailyContainer'),
+            landmarksContainer: document.getElementById('landmarksContainer'),
+            eventsContainer: document.getElementById('eventsContainer'),
+            cityHistoryText: document.getElementById('cityHistoryText'),
+            heritageCityTag: document.getElementById('heritageCityTag'),
+            activitiesGrid: document.getElementById('activitiesGrid'),
+            playRadarBtn: document.getElementById('playRadarBtn'),
+            radarTimestamp: document.getElementById('radarTimestamp'),
+            // Modal Elements
+            activityModal: document.getElementById('activityModal'),
+            closeModalBtn: document.getElementById('closeModalBtn'),
+            modalCategoryIcon: document.getElementById('modalCategoryIcon'),
+            modalTypeBadge: document.getElementById('modalTypeBadge'),
+            modalTitle: document.getElementById('modalTitle'),
+            modalDescription: document.getElementById('modalDescription'),
+            modalLocation: document.getElementById('modalLocation'),
+            modalPrice: document.getElementById('modalPrice'),
+            modalSchedule: document.getElementById('modalSchedule'),
+            modalGear: document.getElementById('modalGear'),
+            modalRouteSpecs: document.getElementById('modalRouteSpecs'),
+            modalDistance: document.getElementById('modalDistance'),
+            modalElevation: document.getElementById('modalElevation'),
+            modalDifficulty: document.getElementById('modalDifficulty'),
+            modalHistoryContext: document.getElementById('modalHistoryContext'),
+            modalHistoryText: document.getElementById('modalHistoryText'),
+            modalMapLink: document.getElementById('modalMapLink'),
+            modalTicketLink: document.getElementById('modalTicketLink')
+        };
+
+        // Initialize Application
+        document.addEventListener('DOMContentLoaded', () => {
+            initLeafletMap();
+            fetchCoordinatesAndWeather("Badajoz");
+            setupEventListeners();
+        });
+
+        // Event Listeners setup
+        function setupEventListeners() {
+            elements.searchForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const query = elements.searchInput.value.trim();
+                if (query) fetchCoordinatesAndWeather(query);
+            });
+
+            elements.locBtn.addEventListener('click', () => {
+                if (navigator.geolocation) {
+                    navigator.geolocation.getCurrentPosition(
+                        (pos) => fetchWeatherByCoords(pos.coords.latitude, pos.coords.longitude, "Mi Ubicación"),
+                        () => showAlert("No se pudo obtener la geolocalización de tu navegador.")
+                    );
+                } else {
+                    showAlert("Tu navegador no soporta geolocalización.");
+                }
+            });
+
+            // Activity Filters
+            document.querySelectorAll('.activity-filter').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    document.querySelectorAll('.activity-filter').forEach(b => {
+                        b.classList.remove('bg-blue-600', 'text-white');
+                        b.classList.add('text-slate-400');
+                    });
+                    e.currentTarget.classList.add('bg-blue-600', 'text-white');
+                    e.currentTarget.classList.remove('text-slate-400');
+
+                    if (e.currentTarget.id === 'filterAll') state.currentFilter = 'all';
+                    if (e.currentTarget.id === 'filterOutdoor') state.currentFilter = 'outdoor';
+                    if (e.currentTarget.id === 'filterIndoor') state.currentFilter = 'indoor';
+
+                    renderActivities();
+                });
+            });
+
+            // Radar Play Button
+            elements.playRadarBtn.addEventListener('click', toggleRadarAnimation);
+
+            // Modal Close handlers
+            elements.closeModalBtn.addEventListener('click', closeModal);
+            elements.activityModal.addEventListener('click', (e) => {
+                if (e.target === elements.activityModal) closeModal();
+            });
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') closeModal();
+            });
+        }
+
+        // Initialize Leaflet Map
+        function initLeafletMap() {
+            state.radarMap = L.map('radarMap', { zoomControl: true }).setView([state.lat, state.lon], 8);
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+                attribution: '&copy; OpenStreetMap &copy; CARTO',
+                maxZoom: 18
+            }).addTo(state.radarMap);
+        }
+
+        // Fetch Location Coordinates via Open-Meteo Geocoding API
+        async function fetchCoordinatesAndWeather(query) {
+            hideAlert();
+            try {
+                const res = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=1&language=es&format=json`);
+                const data = await res.json();
+                if (data.results && data.results.length > 0) {
+                    const place = data.results[0];
+                    state.lat = place.latitude;
+                    state.lon = place.longitude;
+                    state.cityName = place.name;
+                    state.country = place.country || "";
+                    fetchWeatherByCoords(state.lat, state.lon, `${place.name}${place.admin1 ? ', ' + place.admin1 : ''}`);
+                } else {
+                    showAlert(`No se encontraron resultados para "${query}". Intenta con otra ciudad o código postal.`);
+                }
+            } catch (err) {
+                showAlert("Error de conexión al buscar la ubicación.");
+            }
+        }
+
+        // Fetch Weather Data from Open-Meteo API
+        async function fetchWeatherByCoords(lat, lon, displayName) {
+            try {
+                const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m&hourly=temperature_2m,precipitation_probability,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto`;
+                const res = await fetch(url);
+                const data = await res.json();
+                state.weatherData = data;
+                state.cityName = displayName;
+
+                // Update UI Components
+                updateCurrentWeatherUI();
+                updateOutfitRecommendations();
+                updateForecastUI();
+                updateHistoricalAndHeritageUI();
+                generateActivitiesData();
+                renderActivities();
+                updateRadarMap();
+
+            } catch (err) {
+                showAlert("Error al descargar los datos meteorológicos.");
+            }
+        }
+
+        // Update Current Weather UI Box
+        function updateCurrentWeatherUI() {
+            const current = state.weatherData.current;
+            elements.cityName.textContent = state.cityName;
+            elements.cityCoords.textContent = `Lat: ${state.lat.toFixed(2)} | Lon: ${state.lon.toFixed(2)}`;
+            elements.currentTemp.textContent = Math.round(current.temperature_2m);
+            elements.feelsLike.textContent = `${Math.round(current.apparent_temperature)} °C`;
+            elements.windSpeed.textContent = `${Math.round(current.wind_speed_10m)} km/h`;
+            elements.humidity.textContent = `${current.relative_humidity_2m} %`;
+
+            const info = getWeatherInfo(current.weather_code);
+            elements.weatherDesc.textContent = info.desc;
+            elements.weatherIconContainer.innerHTML = `<i class="fa-solid ${info.icon}"></i>`;
+        }
+
+        // Outfit Logic Generator based on Weather Variables
+        function updateOutfitRecommendations() {
+            const temp = state.weatherData.current.temperature_2m;
+            const wind = state.weatherData.current.wind_speed_10m;
+            const precip = state.weatherData.current.precipitation;
+            const code = state.weatherData.current.weather_code;
+
+            let outerwear = "Chaqueta ligera o abrigo estándar.";
+            let base = "Camiseta de manga corta o sudadera fina.";
+            let footwear = "Calzado cómodo para caminar.";
+            let tip = "Día apacible para disfrutar al aire libre.";
+
+            // Temperature rules
+            if (temp < 8) {
+                outerwear = "Abrigo grueso o plumífero, bufanda y guantes recomendados.";
+                base = "Térmica interior y jersey o sudadera de lana de grosor medio.";
+                footwear = "Calzado de invierno abrigado con calcetines térmicos.";
+                tip = "Temperaturas bajas. Protégete las extremidades al salir.";
+            } else if (temp >= 8 && temp < 18) {
+                outerwear = "Chaqueta cortavientos, cazadora o abrigo fino.";
+                base = "Camiseta de manga larga o jersey ligero.";
+                footwear = "Zapatillas de deporte o calzado casual cerrado.";
+                tip = "Ambiente fresco. Elige capas superpuestas ajustables.";
+            } else if (temp >= 18 && temp < 26) {
+                outerwear = "No se requiere chaqueta gruesa. Llevar chaqueta fina por la noche.";
+                base = "Camiseta de manga corta transpirable o camisa fina.";
+                footwear = "Zapatillas ligeras, calzado urbano cómodo o calzado de lona.";
+                tip = "Temperatura muy agradable y confortable.";
+            } else {
+                outerwear = "Sin chaqueta. Ropa muy holgada y clara.";
+                base = "Camiseta de tirantes o manga corta súper ligera.";
+                footwear = "Sandalias o zapatillas extremadamente transpirables.";
+                tip = "Altas temperaturas. Busca la sombra e hidrátate constantemente.";
+            }
+
+            // Rain modifications
+            if (precip > 0 || [51,53,55,61,63,65,80,81,82,95].includes(code)) {
+                outerwear = "Impermeable, chubasquero técnico o cortavientos resistente al agua.";
+                footwear += " (Esencial calzado resistente al agua o botas con suela antideslizante).";
+                tip = "Precipitación activa o inminente. Lleva paraguas resistente y evita zonas encharcables.";
+            }
+
+            // Wind modifications
+            if (wind > 35) {
+                outerwear += " Capa exterior estrictamente cortavientos ajustada.";
+                tip += " Ráfagas de viento considerables. Precaución en parques y zonas arboladas.";
+            }
+
+            elements.outerwearAdvice.textContent = outerwear;
+            elements.baseAdvice.textContent = base;
+            elements.footwearAdvice.textContent = footwear;
+            elements.generalTip.textContent = tip;
+        }
+
+        // Radar Overlay Manager (RainViewer API Integration)
+        async function updateRadarMap() {
+            state.radarMap.setView([state.lat, state.lon], 8);
+
+            // Remove existing radar layers
+            state.radarLayers.forEach(layer => state.radarMap.removeLayer(layer));
+            state.radarLayers = [];
+            state.radarTimestamps = [];
+
+            try {
+                const res = await fetch('https://api.rainviewer.com/public/weather-maps.json');
+                const data = await res.json();
+                
+                const frames = data.radar.past.concat(data.radar.nowcast || []);
+                state.radarTimestamps = frames;
+
+                frames.forEach((frame, idx) => {
+                    const tileLayer = L.tileLayer(`${data.host}${frame.path}/256/{z}/{x}/{y}/2/1_1.png`, {
+                        opacity: idx === frames.length - 1 ? 0.75 : 0,
+                        zIndex: 20
+                    });
+                    tileLayer.addTo(state.radarMap);
+                    state.radarLayers.push(tileLayer);
+                });
+
+                state.currentRadarIndex = state.radarLayers.length - 1;
+                updateRadarTimeDisplay();
+
+            } catch (err) {
+                console.error("Error loading radar tiles:", err);
+            }
+        }
+
+        function updateRadarTimeDisplay() {
+            if (state.radarTimestamps[state.currentRadarIndex]) {
+                const date = new Date(state.radarTimestamps[state.currentRadarIndex].time * 1000);
+                elements.radarTimestamp.textContent = `Toma: ${date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
+            }
+        }
+
+        function toggleRadarAnimation() {
+            if (state.radarInterval) {
+                clearInterval(state.radarInterval);
+                state.radarInterval = null;
+                elements.playRadarBtn.innerHTML = `<i class="fa-solid fa-play"></i> Reproducción Animada`;
+            } else {
+                elements.playRadarBtn.innerHTML = `<i class="fa-solid fa-pause"></i> Pausar`;
+                state.radarInterval = setInterval(() => {
+                    state.radarLayers[state.currentRadarIndex].setOpacity(0);
+                    state.currentRadarIndex = (state.currentRadarIndex + 1) % state.radarLayers.length;
+                    state.radarLayers[state.currentRadarIndex].setOpacity(0.75);
+                    updateRadarTimeDisplay();
+                }, 750);
+            }
+        }
+
+        // Update Hourly & 7-Day Forecast UI Cards
+        function updateForecastUI() {
+            // Hourly
+            elements.hourlyContainer.innerHTML = '';
+            const hourly = state.weatherData.hourly;
+            for (let i = 0; i < 12; i++) {
+                const time = new Date(hourly.time[i]).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                const temp = Math.round(hourly.temperature_2m[i]);
+                const prob = hourly.precipitation_probability[i];
+                const info = getWeatherInfo(hourly.weather_code[i]);
+
+                const card = document.createElement('div');
+                card.className = "flex-none bg-slate-900/80 border border-slate-700/60 p-3 rounded-xl text-center w-24 space-y-1.5 shadow";
+                card.innerHTML = `
+                    <p class="text-xs text-slate-400 font-medium">${time}</p>
+                    <div class="text-xl text-blue-400"><i class="fa-solid ${info.icon}"></i></div>
+                    <p class="text-base font-extrabold text-white">${temp}°C</p>
+                    <p class="text-[10px] text-cyan-400 font-semibold"><i class="fa-solid fa-droplet text-[9px]"></i> ${prob}%</p>
+                `;
+                elements.hourlyContainer.appendChild(card);
+            }
+
+            // Daily
+            elements.dailyContainer.innerHTML = '';
+            const daily = state.weatherData.daily;
+            for (let i = 0; i < 7; i++) {
+                const dayName = new Date(daily.time[i]).toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric' });
+                const max = Math.round(daily.temperature_2m_max[i]);
+                const min = Math.round(daily.temperature_2m_min[i]);
+                const prob = daily.precipitation_probability_max[i];
+                const info = getWeatherInfo(daily.weather_code[i]);
+
+                const card = document.createElement('div');
+                card.className = "bg-slate-900/80 border border-slate-700/60 p-3 rounded-xl text-center flex flex-col justify-between shadow";
+                card.innerHTML = `
+                    <p class="text-xs font-bold text-slate-300 capitalize">${dayName}</p>
+                    <div class="text-2xl text-amber-400 my-1"><i class="fa-solid ${info.icon}"></i></div>
+                    <div>
+                        <span class="text-sm font-bold text-white">${max}°</span>
+                        <span class="text-xs text-slate-400 font-medium ml-1">${min}°</span>
+                    </div>
+                    <p class="text-[10px] text-cyan-400 font-semibold mt-1"><i class="fa-solid fa-droplet text-[9px]"></i> ${prob}%</p>
+                `;
+                elements.dailyContainer.appendChild(card);
+            }
+        }
+
+        // Dynamic Cultural Heritage and History Generator
+        function updateHistoricalAndHeritageUI() {
+            const city = state.cityName.split(',')[0];
+            elements.heritageCityTag.textContent = `Patrimonio de ${city}`;
+
+            // History overview text
+            elements.cityHistoryText.textContent = `${city} cuenta con un arraigado legado histórico esculpido por el paso de diversas civilizaciones y asentamientos históricos. Sus enclaves estratégicos, arquitectura monumental e instituciones culturales reflejan la relevancia histórica y la riqueza patrimonial de la región.`;
+
+            // Dynamic Landmarks
+            elements.landmarksContainer.innerHTML = `
+                <div class="bg-slate-900/60 p-3.5 rounded-xl border border-slate-700/50 flex items-start gap-3">
+                    <div class="p-2 bg-blue-500/10 text-blue-400 rounded-lg"><i class="fa-solid fa-fort-awesome text-lg"></i></div>
+                    <div>
+                        <h5 class="text-xs font-bold text-white">Fortificaciones y Conjunto Histórico</h5>
+                        <p class="text-[11px] text-slate-400 mt-0.5">Época: Siglos IX - XVII | Estilo: Defensivo / Histórico</p>
+                        <p class="text-xs text-slate-300 mt-1">Estructuras monumentales que preservan la memoria defensiva e histórico-artística de la localidad de ${city}.</p>
+                    </div>
+                </div>
+                <div class="bg-slate-900/60 p-3.5 rounded-xl border border-slate-700/50 flex items-start gap-3">
+                    <div class="p-2 bg-amber-500/10 text-amber-400 rounded-lg"><i class="fa-solid fa-church text-lg"></i></div>
+                    <div>
+                        <h5 class="text-xs font-bold text-white">Catedral / Templo Parroquial Mayor</h5>
+                        <p class="text-[11px] text-slate-400 mt-0.5">Época: Siglos XIII - XVI | Estilo: Gótico / Renacentista</p>
+                        <p class="text-xs text-slate-300 mt-1">Centro de la vida espiritual y arquitectónica con valioso retablo e iconografía sacro-religiosa.</p>
+                    </div>
+                </div>
+            `;
+
+            // Dynamic Timeline Events
+            elements.eventsContainer.innerHTML = `
+                <div class="bg-slate-900/60 p-3.5 rounded-xl border border-slate-700/50 flex items-start gap-3">
+                    <div class="p-2 bg-emerald-500/10 text-emerald-400 rounded-lg"><i class="fa-solid fa-hourglass-start text-lg"></i></div>
+                    <div>
+                        <h5 class="text-xs font-bold text-white">Fundación y Expansión Inicial</h5>
+                        <p class="text-[11px] text-slate-400 mt-0.5">Hito Fundacional</p>
+                        <p class="text-xs text-slate-300 mt-1">Establecimiento de las primeras vías de comunicación y asentamiento urbano consolidado en la zona de ${city}.</p>
+                    </div>
+                </div>
+                <div class="bg-slate-900/60 p-3.5 rounded-xl border border-slate-700/50 flex items-start gap-3">
+                    <div class="p-2 bg-cyan-500/10 text-cyan-400 rounded-lg"><i class="fa-solid fa-scroll text-lg"></i></div>
+                    <div>
+                        <h5 class="text-xs font-bold text-white">Desarrollo Moderno y Transición Cultural</h5>
+                        <p class="text-[11px] text-slate-400 mt-0.5">Siglos XIX - XX</p>
+                        <p class="text-xs text-slate-300 mt-1">Modernización de infraestructuras y consolidación de espacios públicos de ocio y museos locales.</p>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Activity Generator (Indoor & Outdoor) with Deep Detailed Properties
+        function generateActivitiesData() {
+            const temp = state.weatherData.current.temperature_2m;
+            const precip = state.weatherData.current.precipitation;
+            const city = state.cityName.split(',')[0];
+            const isBadWeather = precip > 0 || temp < 5 || temp > 36;
+
+            state.activitiesList = [
+                {
+                    id: 'act-1',
+                    title: `Ruta de Senderismo Histórico por ${city}`,
+                    category: 'outdoor',
+                    icon: 'fa-person-hiking',
+                    iconBg: 'bg-emerald-500/20 text-emerald-400',
+                    shortDesc: 'Recorrido panorámico por los principales miradores y parajes naturales emblemáticos.',
+                    longDesc: `Una completa ruta de senderismo al aire libre que recorre el patrimonio paisajístico y las sendas naturales que bordean el término de ${city}. Excelente para disfrutar de la biodiversidad local y vistas panorámicas.`,
+                    suitable: !isBadWeather,
+                    suitabilityText: !isBadWeather ? 'Ideal con el tiempo actual' : 'Precaución por tiempo desapacible',
+                    location: `Entorno Natural y Miradores de ${city}`,
+                    price: 'Gratuito',
+                    ticketLink: `https://www.google.com/search?q=rutas+senderismo+${encodeURIComponent(city)}`,
+                    mapQuery: `https://www.google.com/maps/search/rutas+senderismo+${encodeURIComponent(city)}`,
+                    schedule: 'Acceso libre (Recomendado horario diurno)',
+                    gear: 'Calzado de montaña o deportivo técnico, agua y cortavientos.',
+                    isRoute: true,
+                    distance: '8.5 km',
+                    elevation: '+180 m',
+                    difficulty: 'Fácil - Moderado',
+                    historyContext: `Este sendero sigue antiguas vías de comunicación y cañadas reales utilizadas históricamente para el transporte de mercancías y ganado.`
+                },
+                {
+                    id: 'act-2',
+                    title: `Visita Guiada al Museo Principal de ${city}`,
+                    category: 'indoor',
+                    icon: 'fa-building-columns',
+                    iconBg: 'bg-purple-500/20 text-purple-400',
+                    shortDesc: 'Explora galerías de arte, hallazgos arqueológicos y exposiciones permanentes.',
+                    longDesc: `Recorrido por las salas de exposición permanente del museo principal de ${city}. Ofrece una visión inmersiva desde la prehistoria hasta el arte contemporáneo de la región.`,
+                    suitable: true,
+                    suitabilityText: 'Recomendado 100% (Climatizado)',
+                    location: `Centro Histórico, Plaza Mayor, ${city}`,
+                    price: '3,00 € (Gratuito los domingos)',
+                    ticketLink: `https://www.google.com/search?q=museo+principal+${encodeURIComponent(city)}+entradas`,
+                    mapQuery: `https://www.google.com/maps/search/museo+${encodeURIComponent(city)}`,
+                    schedule: 'Mar a Sáb: 10:00 - 20:00 | Dom: 10:00 - 14:00',
+                    gear: 'Ropa de vestir cómoda. No se permiten mochilas grandes.',
+                    isRoute: false,
+                    historyContext: `Ubicado en un antiguo edificio señorial rehabilitado del siglo XVIII que albergó destacadas personalidades de la época.`
+                },
+                {
+                    id: 'act-3',
+                    title: `Ruta Cicloturista por Parques y Alamedas`,
+                    category: 'outdoor',
+                    icon: 'fa-bicycle',
+                    iconBg: 'bg-cyan-500/20 text-cyan-400',
+                    shortDesc: 'Paseo circular sobre pedales conectando zonas verdes y riveras.',
+                    longDesc: `Itinerario urbano y periurbano totalmente adecuado para bicicletas de paseo o de montaña. Permite descubrir los pulmones verdes y jardines históricos de ${city}.`,
+                    suitable: !isBadWeather,
+                    suitabilityText: !isBadWeather ? 'Excelente para pedalear' : 'No recomendado si hay lluvia o viento',
+                    location: `Carril Bici y Red de Parques de ${city}`,
+                    price: 'Gratuito / Alquiler bici ~5€/h',
+                    ticketLink: `https://www.google.com/search?q=alquiler+bicicletas+${encodeURIComponent(city)}`,
+                    mapQuery: `https://www.google.com/maps/search/parques+y+rutas+bici+${encodeURIComponent(city)}`,
+                    schedule: 'Libre durante todo el día',
+                    gear: 'Casco homologado, luces reflectantes y agua.',
+                    isRoute: true,
+                    distance: '12.0 km',
+                    elevation: '+45 m',
+                    difficulty: 'Muy Fácil',
+                    historyContext: `Diseñada sobre los antiguos trazados ferroviarios y senderos fluviales recuperados para la ciudadanía.`
+                },
+                {
+                    id: 'act-4',
+                    title: `Ruta Gastronómica y Tapeo en Mercado Local`,
+                    category: 'indoor',
+                    icon: 'fa-utensils',
+                    iconBg: 'bg-amber-500/20 text-amber-400',
+                    shortDesc: 'Degustación de productos de cercanía, vinos con D.O. y platos típicos.',
+                    longDesc: `Experiencia en el mercado gastronómico tradicional y tabernas adyacentes de ${city}. Una forma perfecta de resguardarse de la intemperie mientras se disfruta de la alta cocina local.`,
+                    suitable: true,
+                    suitabilityText: 'Ideal para cualquier clima',
+                    location: `Mercado de Abastos / Zona Centro, ${city}`,
+                    price: 'Consunción según carta (~12€ - 25€ por persona)',
+                    ticketLink: `https://www.google.com/search?q=mejores+restaurantes+tapas+${encodeURIComponent(city)}`,
+                    mapQuery: `https://www.google.com/maps/search/restaurantes+mercado+${encodeURIComponent(city)}`,
+                    schedule: 'Lunes a Domingo: 12:00 - 23:30',
+                    gear: 'Ropa informal.',
+                    isRoute: false,
+                    historyContext: `Los mercados tradicionales de la zona han sido el motor económico y punto de encuentro cultural de los comerciantes durante siglos.`
+                },
+                {
+                    id: 'act-5',
+                    title: `Paseo Cultural por el Casco Histórico y Murallas`,
+                    category: 'outdoor',
+                    icon: 'fa-monument',
+                    iconBg: 'bg-rose-500/20 text-rose-400',
+                    shortDesc: 'Recorrido a pie fotografiando los vestigios antiguos y puertas de la ciudad.',
+                    longDesc: `Paseo a pie guiado o libre para contemplar las baluartes, puertas de muralla y plazas empedradas con mayor peso histórico de ${city}.`,
+                    suitable: !isBadWeather,
+                    suitabilityText: !isBadWeather ? 'Recomendado para fotografías' : 'Prevé paraguas si hay llovizna',
+                    location: `Casco Antiguo de ${city}`,
+                    price: 'Gratuito',
+                    ticketLink: `https://www.google.com/search?q=oficina+turismo+${encodeURIComponent(city)}`,
+                    mapQuery: `https://www.google.com/maps/search/casco+antiguo+${encodeURIComponent(city)}`,
+                    schedule: 'Recomendado por la mañana o al atardecer',
+                    gear: 'Calzado cómodo antideslizante para pavimento de piedra.',
+                    isRoute: true,
+                    distance: '4.2 km',
+                    elevation: '+60 m',
+                    difficulty: 'Fácil',
+                    historyContext: `Las murallas de la ciudad han presenciado múltiples asedios y acontecimientos clave durante la época medieval y moderna.`
+                },
+                {
+                    id: 'act-6',
+                    title: `Sesión de Teatro, Cine o Espectáculo en Vivo`,
+                    category: 'indoor',
+                    icon: 'fa-ticket',
+                    iconBg: 'bg-indigo-500/20 text-indigo-400',
+                    shortDesc: 'Disfruta de la cartelera de artes escénicas en un entorno confortablemente acondicionado.',
+                    longDesc: `Asiste a una representación teatral, concierto u obra cinematográfica en el principal espacio cultural de ${city}. La mejor opción para tardes frías o de lluvia.`,
+                    suitable: true,
+                    suitabilityText: 'Perfecto ante lluvia o frío',
+                    location: `Teatro Municipal / Auditorio de ${city}`,
+                    price: 'Entradas entre 8,00 € y 22,00 €',
+                    ticketLink: `https://www.google.com/search?q=teatro+auditorio+${encodeURIComponent(city)}+cartelera`,
+                    mapQuery: `https://www.google.com/maps/search/teatro+auditorio+${encodeURIComponent(city)}`,
+                    schedule: 'Según cartelera (Habitualmente pases a las 18:00 y 20:30)',
+                    gear: 'Ropa formal o casual.',
+                    isRoute: false,
+                    historyContext: `Construcción de estilo neoclásico que ha acogido las compañías dramáticas y líricas más destacadas de la región.`
+                }
+            ];
+        }
+
+        // Render Filtered Activity Cards Grid
+        function renderActivities() {
+            elements.activitiesGrid.innerHTML = '';
+            
+            const filtered = state.activitiesList.filter(act => {
+                if (state.currentFilter === 'all') return true;
+                return act.category === state.currentFilter;
+            });
+
+            filtered.forEach(act => {
+                const card = document.createElement('div');
+                card.className = "bg-slate-900/80 border border-slate-700/60 hover:border-blue-500/50 p-5 rounded-2xl transition duration-200 cursor-pointer flex flex-col justify-between group shadow-lg";
+                card.onclick = () => openActivityModal(act.id);
+
+                card.innerHTML = `
+                    <div>
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-2.5">
+                                <div class="p-2.5 rounded-xl ${act.iconBg}">
+                                    <i class="fa-solid ${act.icon} text-base"></i>
+                                </div>
+                                <span class="text-[10px] font-extrabold tracking-wider uppercase px-2 py-0.5 rounded-md ${act.category === 'outdoor' ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-purple-950 text-purple-300 border border-purple-800'}">
+                                    ${act.category === 'outdoor' ? 'Exterior' : 'Interior'}
+                                </span>
+                            </div>
+                            <span class="text-[11px] font-semibold text-slate-400 group-hover:text-blue-400 transition flex items-center gap-1">
+                                Ver detalles <i class="fa-solid fa-chevron-right text-[9px]"></i>
+                            </span>
+                        </div>
+
+                        <h4 class="text-base font-bold text-white group-hover:text-blue-300 transition line-clamp-1">${act.title}</h4>
+                        <p class="text-xs text-slate-300 mt-1.5 leading-relaxed line-clamp-2">${act.shortDesc}</p>
+                    </div>
+
+                    <div class="mt-4 pt-3 border-t border-slate-800 flex items-center justify-between text-[11px]">
+                        <span class="text-slate-400 font-medium">
+                            <i class="fa-solid fa-location-dot text-red-400 mr-1"></i> ${act.location.split(',')[0]}
+                        </span>
+                        <span class="font-bold ${act.suitable ? 'text-emerald-400' : 'text-amber-400'} flex items-center gap-1">
+                            <i class="fa-solid ${act.suitable ? 'fa-circle-check' : 'fa-triangle-exclamation'} text-[10px]"></i>
+                            ${act.suitable ? 'Recomendado' : 'Revisar Clima'}
+                        </span>
+                    </div>
+                `;
+                elements.activitiesGrid.appendChild(card);
+            });
+        }
+
+        // Open Detailed Activity Modal
+        function openActivityModal(actId) {
+            const act = state.activitiesList.find(a => a.id === actId);
+            if (!act) return;
+
+            elements.modalTitle.textContent = act.title;
+            elements.modalDescription.textContent = act.longDesc;
+            elements.modalTypeBadge.textContent = act.category === 'outdoor' ? 'Actividad de Exterior' : 'Actividad de Interior';
+            elements.modalCategoryIcon.className = `p-3 rounded-xl text-xl ${act.iconBg}`;
+            elements.modalCategoryIcon.innerHTML = `<i class="fa-solid ${act.icon}"></i>`;
+
+            elements.modalLocation.textContent = act.location;
+            elements.modalPrice.textContent = act.price;
+            elements.modalSchedule.textContent = act.schedule;
+            elements.modalGear.textContent = act.gear;
+
+            // Route technical details
+            if (act.isRoute) {
+                elements.modalRouteSpecs.classList.remove('hidden');
+                elements.modalDistance.textContent = act.distance || '--';
+                elements.modalElevation.textContent = act.elevation || '--';
+                elements.modalDifficulty.textContent = act.difficulty || '--';
+            } else {
+                elements.modalRouteSpecs.classList.add('hidden');
+            }
+
+            // Historical context
+            elements.modalHistoryText.textContent = act.historyContext || 'Punto de interés con valor histórico e integrativo dentro del municipio.';
+
+            // Dynamic links
+            elements.modalMapLink.href = act.mapQuery;
+            elements.modalTicketLink.href = act.ticketLink;
+
+            elements.activityModal.classList.remove('hidden');
+            document.body.style.overflow = 'hidden';
+        }
+
+        function closeModal() {
+            elements.activityModal.classList.add('hidden');
+            document.body.style.overflow = 'auto';
+        }
+
+        // Helper: Convert WMO Weather Codes to Text and FontAwesome Icons
+        function getWeatherInfo(code) {
+            const mapping = {
+                0: { desc: "Cielo despejado", icon: "fa-sun" },
+                1: { desc: "Principalmente despejado", icon: "fa-cloud-sun" },
+                2: { desc: "Parcialmente nublado", icon: "fa-cloud-sun" },
+                3: { desc: "Nublado", icon: "fa-cloud" },
+                45: { desc: "Niebla", icon: "fa-smog" },
+                48: { desc: "Niebla con escarcha", icon: "fa-smog" },
+                51: { desc: "Llovizna ligera", icon: "fa-cloud-rain" },
+                53: { desc: "Llovizna moderada", icon: "fa-cloud-rain" },
+                55: { desc: "Llovizna densa", icon: "fa-cloud-showers-heavy" },
+                61: { desc: "Lluvia débil", icon: "fa-cloud-rain" },
+                63: { desc: "Lluvia moderada", icon: "fa-cloud-showers-heavy" },
+                65: { desc: "Lluvia fuerte", icon: "fa-cloud-showers-water" },
+                71: { desc: "Nieve ligera", icon: "fa-snowflake" },
+                73: { desc: "Nieve moderada", icon: "fa-snowflake" },
+                75: { desc: "Nieve intensa", icon: "fa-snowflake" },
+                80: { desc: "Chubascos ligeros", icon: "fa-cloud-sun-rain" },
+                81: { desc: "Chubascos moderados", icon: "fa-cloud-showers-heavy" },
+                82: { desc: "Chubascos violentos", icon: "fa-cloud-showers-water" },
+                95: { desc: "Tormenta eléctrica", icon: "fa-cloud-bolt" }
+            };
+            return mapping[code] || { desc: "Condición variable", icon: "fa-cloud" };
+        }
+
+        // Helper: Alert messages
+        function showAlert(msg) {
+            elements.alertText.textContent = msg;
+            elements.alertBox.classList.remove('hidden');
+        }
+
+        function hideAlert() {
+            elements.alertBox.classList.add('hidden');
+        }
+    </script>
+</body>
+</html>
